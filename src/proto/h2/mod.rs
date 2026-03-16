@@ -4,6 +4,7 @@ use std::io::{Cursor, IoSlice};
 use std::mem;
 use std::pin::Pin;
 use std::task::{Context, Poll};
+use std::time::Duration;
 
 use bytes::{Buf, Bytes};
 use futures_core::ready;
@@ -11,12 +12,16 @@ use h2::{Reason, RecvStream, SendStream};
 use http::header::{HeaderName, CONNECTION, TE, TRANSFER_ENCODING, UPGRADE};
 use http::HeaderMap;
 use pin_project_lite::pin_project;
+use tokio::time::Sleep;
 
 use crate::body::Body;
 use crate::proto::h2::ping::Recorder;
 use crate::rt::{Read, ReadBufCursor, Write};
 
 pub(crate) mod ping;
+
+const H2_STREAM_SEND_TIMEOUT: Duration = Duration::from_secs(10);
+const H2_STREAM_SEND_CHUNK_SIZE: usize = 16 * 1024;
 
 cfg_client! {
     pub(crate) mod client;
@@ -89,10 +94,17 @@ pin_project! {
         S: Body,
     {
         body_tx: SendStream<SendBuf<S::Data>>,
-        data_done: bool,
+        pending_data: Option<PendingData<S::Data>>,
+        #[pin]
+        reset_timer: Sleep,
         #[pin]
         stream: S,
     }
+}
+
+struct PendingData<B> {
+    data: B,
+    end_stream: bool,
 }
 
 impl<S> PipeToSendStream<S>
@@ -102,7 +114,8 @@ where
     fn new(stream: S, tx: SendStream<SendBuf<S::Data>>) -> PipeToSendStream<S> {
         PipeToSendStream {
             body_tx: tx,
-            data_done: false,
+            pending_data: None,
+            reset_timer: tokio::time::sleep(H2_STREAM_SEND_TIMEOUT),
             stream,
         }
     }
@@ -118,6 +131,10 @@ where
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let mut me = self.project();
         loop {
+            if me.reset_timer.as_mut().poll(cx).is_ready() {
+                return Poll::Ready(Err(me.body_tx.on_send_timeout()));
+            }
+
             // we don't have the next chunk of data yet, so just reserve 1 byte to make
             // sure there's some capacity available. h2 will handle the capacity management
             // for the actual body chunk.
@@ -125,6 +142,10 @@ where
 
             if me.body_tx.capacity() == 0 {
                 loop {
+                    if me.reset_timer.as_mut().poll(cx).is_ready() {
+                        return Poll::Ready(Err(me.body_tx.on_send_timeout()));
+                    }
+
                     match ready!(me.body_tx.poll_capacity(cx)) {
                         Some(Ok(0)) => {}
                         Some(Ok(_)) => break,
@@ -148,6 +169,32 @@ where
                 return Poll::Ready(Err(crate::Error::new_body_write(::h2::Error::from(reason))));
             }
 
+            if let Some(mut pending) = me.pending_data.take() {
+                let chunk_len = pending
+                    .data
+                    .remaining()
+                    .min(me.body_tx.capacity().max(1))
+                    .min(H2_STREAM_SEND_CHUNK_SIZE);
+                let is_last_chunk = pending.data.remaining() == chunk_len;
+                let is_eos = pending.end_stream && is_last_chunk;
+                if is_last_chunk {
+                    me.body_tx
+                        .send_data(SendBuf::Buf(pending.data), is_eos)
+                        .map_err(crate::Error::new_body_write)?;
+                } else {
+                    me.body_tx
+                        .send_data(SendBuf::Bytes(pending.data.copy_to_bytes(chunk_len)), false)
+                        .map_err(crate::Error::new_body_write)?;
+                    *me.pending_data = Some(pending);
+                }
+
+                if is_eos {
+                    return Poll::Ready(Ok(()));
+                }
+
+                continue;
+            }
+
             match ready!(me.stream.as_mut().poll_frame(cx)) {
                 Some(Ok(frame)) => {
                     if frame.is_data() {
@@ -159,14 +206,10 @@ where
                             is_eos,
                         );
 
-                        let buf = SendBuf::Buf(chunk);
-                        me.body_tx
-                            .send_data(buf, is_eos)
-                            .map_err(crate::Error::new_body_write)?;
-
-                        if is_eos {
-                            return Poll::Ready(Ok(()));
-                        }
+                        *me.pending_data = Some(PendingData {
+                            data: chunk,
+                            end_stream: is_eos,
+                        });
                     } else if frame.is_trailers() {
                         // no more DATA, so give any capacity back
                         me.body_tx.reserve_capacity(0);
@@ -195,6 +238,7 @@ trait SendStreamExt {
     fn on_user_err<E>(&mut self, err: E) -> crate::Error
     where
         E: Into<Box<dyn std::error::Error + Send + Sync>>;
+    fn on_send_timeout(&mut self) -> crate::Error;
     fn send_eos_frame(&mut self) -> crate::Result<()>;
 }
 
@@ -209,6 +253,13 @@ impl<B: Buf> SendStreamExt for SendStream<SendBuf<B>> {
         err
     }
 
+    fn on_send_timeout(&mut self) -> crate::Error {
+        let err = crate::Error::new_user_body(h2::Error::from(h2::Reason::CANCEL));
+        debug!("send body timed out: {}", err);
+        self.send_reset(h2::Reason::CANCEL);
+        err
+    }
+
     fn send_eos_frame(&mut self) -> crate::Result<()> {
         trace!("send body eos");
         self.send_data(SendBuf::None, true)
@@ -219,6 +270,7 @@ impl<B: Buf> SendStreamExt for SendStream<SendBuf<B>> {
 #[repr(usize)]
 enum SendBuf<B> {
     Buf(B),
+    Bytes(Bytes),
     Cursor(Cursor<Box<[u8]>>),
     None,
 }
@@ -228,6 +280,7 @@ impl<B: Buf> Buf for SendBuf<B> {
     fn remaining(&self) -> usize {
         match *self {
             Self::Buf(ref b) => b.remaining(),
+            Self::Bytes(ref b) => b.remaining(),
             Self::Cursor(ref c) => Buf::remaining(c),
             Self::None => 0,
         }
@@ -237,6 +290,7 @@ impl<B: Buf> Buf for SendBuf<B> {
     fn chunk(&self) -> &[u8] {
         match *self {
             Self::Buf(ref b) => b.chunk(),
+            Self::Bytes(ref b) => b.chunk(),
             Self::Cursor(ref c) => c.chunk(),
             Self::None => &[],
         }
@@ -246,6 +300,7 @@ impl<B: Buf> Buf for SendBuf<B> {
     fn advance(&mut self, cnt: usize) {
         match *self {
             Self::Buf(ref mut b) => b.advance(cnt),
+            Self::Bytes(ref mut b) => b.advance(cnt),
             Self::Cursor(ref mut c) => c.advance(cnt),
             Self::None => {}
         }
@@ -254,6 +309,7 @@ impl<B: Buf> Buf for SendBuf<B> {
     fn chunks_vectored<'a>(&'a self, dst: &mut [IoSlice<'a>]) -> usize {
         match *self {
             Self::Buf(ref b) => b.chunks_vectored(dst),
+            Self::Bytes(ref b) => b.chunks_vectored(dst),
             Self::Cursor(ref c) => c.chunks_vectored(dst),
             Self::None => 0,
         }

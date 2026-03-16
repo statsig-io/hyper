@@ -488,34 +488,25 @@ where
     B::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
     T: Read + Write + Unpin,
 {
-    fn poll_pipe(&mut self, f: FutCtx<B>, cx: &mut Context<'_>) {
+    fn poll_pipe(&mut self, f: FutCtx<B>, _cx: &mut Context<'_>) {
         let ping = self.ping.clone();
 
         let send_stream = if !f.is_connect {
             if !f.eos {
-                let mut pipe = PipeToSendStream::new(f.body, f.body_tx);
+                let conn_drop_ref = self.conn_drop_ref.clone();
+                // keep the ping recorder's knowledge of an
+                // "open stream" alive while this body is
+                // still sending...
+                let ping = ping.clone();
 
-                // eagerly see if the body pipe is ready and
-                // can thus skip allocating in the executor
-                match Pin::new(&mut pipe).poll(cx) {
-                    Poll::Ready(_) => (),
-                    Poll::Pending => {
-                        let conn_drop_ref = self.conn_drop_ref.clone();
-                        // keep the ping recorder's knowledge of an
-                        // "open stream" alive while this body is
-                        // still sending...
-                        let ping = ping.clone();
-
-                        let pipe = PipeMap {
-                            pipe,
-                            conn_drop_ref: Some(conn_drop_ref),
-                            ping: Some(ping),
-                        };
-                        // Clear send task
-                        self.executor
-                            .execute_h2_future(H2ClientFuture::Pipe { pipe });
-                    }
-                }
+                let pipe = PipeMap {
+                    pipe: PipeToSendStream::new(f.body, f.body_tx),
+                    conn_drop_ref: Some(conn_drop_ref),
+                    ping: Some(ping),
+                };
+                // Clear send task
+                self.executor
+                    .execute_h2_future(H2ClientFuture::Pipe { pipe });
             }
 
             None
