@@ -16,7 +16,7 @@ use crate::body::{Body, Incoming as IncomingBody};
 use crate::common::date;
 use crate::common::io::Compat;
 use crate::common::time::Time;
-use crate::ext::Protocol;
+use crate::ext::{H2BodySendTimeout, Protocol};
 use crate::headers;
 use crate::proto::h2::ping::Recorder;
 use crate::proto::h2::{H2Upgraded, UpgradedSendStream};
@@ -460,6 +460,10 @@ where
                         }
                     };
 
+                    let send_timeout = res
+                        .extensions()
+                        .get::<H2BodySendTimeout>()
+                        .map(H2BodySendTimeout::get);
                     let (head, body) = res.into_parts();
                     let mut res = ::http::Response::from_parts(head, ());
                     super::strip_connection_headers(res.headers_mut(), false);
@@ -512,7 +516,7 @@ where
                             pipe: PipeToSendStream::new(
                                 body,
                                 body_tx,
-                                None,
+                                send_timeout,
                             ),
                         }
                     } else {

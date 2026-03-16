@@ -30,7 +30,7 @@
 //! - **Informational Responses**: [`on_informational`] — Register callbacks for 1xx HTTP/1 responses on the client.
 //! - **Header Case Tracking**: Internal types for tracking the original casing and order of headers as received.
 //! - **HTTP/2 Protocol Extensions**: [`Protocol`] — Access the `:protocol` pseudo-header for Extended CONNECT in HTTP/2.
-//! - **HTTP/2 Client Request Extensions**: [`H2BodySendTimeout`] — Override the request body send timeout for a specific HTTP/2 client request.
+//! - **HTTP/2 Body Send Timeout**: [`H2BodySendTimeout`] — Override the HTTP/2 body send timeout for a specific request or response.
 //!
 //! Some extensions are only available for specific protocols (HTTP/1 or HTTP/2) or use cases (client, server, FFI).
 //!
@@ -49,7 +49,7 @@ use http::header::{HeaderMap, IntoHeaderName, ValueIter};
 use std::collections::HashMap;
 #[cfg(feature = "http2")]
 use std::fmt;
-#[cfg(all(feature = "client", feature = "http2"))]
+#[cfg(feature = "http2")]
 use std::time::Duration;
 
 #[cfg(any(feature = "http1", feature = "ffi"))]
@@ -138,14 +138,15 @@ impl fmt::Debug for Protocol {
     }
 }
 
-#[cfg(all(feature = "client", feature = "http2"))]
-/// Extension type that overrides the HTTP/2 request body send timeout for a single request.
+#[cfg(feature = "http2")]
+/// Extension type that overrides the HTTP/2 body send timeout for a single message.
 ///
-/// Hyper applies this timeout while sending an HTTP/2 request body. If the timeout is reached
+/// Hyper applies this timeout while sending an HTTP/2 request or response body. If the timeout is reached
 /// before the body is fully sent, Hyper resets the stream with `RST_STREAM(CANCEL)`.
-/// If this extension is not present, Hyper does not apply a request body send timeout.
+/// If this extension is not present, Hyper does not apply a body send timeout.
 ///
-/// Attach this extension to a request before sending it with an HTTP/2 client connection:
+/// Attach this extension to a request before sending it with an HTTP/2 client connection,
+/// or to a response before returning it from an HTTP/2 server:
 ///
 /// ```rust
 /// use std::time::Duration;
@@ -158,9 +159,9 @@ impl fmt::Debug for Protocol {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct H2BodySendTimeout(Duration);
 
-#[cfg(all(feature = "client", feature = "http2"))]
+#[cfg(feature = "http2")]
 impl H2BodySendTimeout {
-    /// Creates a new per-request HTTP/2 body send timeout override.
+    /// Creates a new per-message HTTP/2 body send timeout override.
     pub fn new(timeout: Duration) -> Self {
         Self(timeout)
     }
