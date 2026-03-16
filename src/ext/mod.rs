@@ -143,6 +143,7 @@ impl fmt::Debug for Protocol {
 ///
 /// Hyper applies this timeout while sending an HTTP/2 request body. If the timeout is reached
 /// before the body is fully sent, Hyper resets the stream with `RST_STREAM(CANCEL)`.
+/// If this extension is not present, Hyper does not apply a request body send timeout.
 ///
 /// Attach this extension to a request before sending it with an HTTP/2 client connection:
 ///

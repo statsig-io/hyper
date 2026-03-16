@@ -406,7 +406,7 @@ where
 {
     is_connect: bool,
     eos: bool,
-    send_timeout: Duration,
+    send_timeout: Option<Duration>,
     fut: ResponseFuture,
     body_tx: SendStream<SendBuf<B::Data>>,
     body: B,
@@ -660,7 +660,7 @@ where
                     let send_timeout = req
                         .extensions()
                         .get::<H2BodySendTimeout>()
-                        .map_or(super::DEFAULT_H2_STREAM_SEND_TIMEOUT, H2BodySendTimeout::get);
+                        .map(H2BodySendTimeout::get);
 
                     if is_connect
                         && headers::content_length_parse_all(req.headers())

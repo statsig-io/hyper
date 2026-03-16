@@ -512,7 +512,7 @@ where
                             pipe: PipeToSendStream::new(
                                 body,
                                 body_tx,
-                                super::DEFAULT_H2_STREAM_SEND_TIMEOUT,
+                                None,
                             ),
                         }
                     } else {

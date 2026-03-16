@@ -20,7 +20,6 @@ use crate::rt::{Read, ReadBufCursor, Write};
 
 pub(crate) mod ping;
 
-const DEFAULT_H2_STREAM_SEND_TIMEOUT: Duration = Duration::from_secs(10);
 const H2_STREAM_SEND_CHUNK_SIZE: usize = 16 * 1024;
 
 cfg_client! {
@@ -96,7 +95,7 @@ pin_project! {
         body_tx: SendStream<SendBuf<S::Data>>,
         pending_data: Option<PendingData<S::Data>>,
         #[pin]
-        reset_timer: Sleep,
+        reset_timer: Option<Sleep>,
         #[pin]
         stream: S,
     }
@@ -114,12 +113,12 @@ where
     fn new(
         stream: S,
         tx: SendStream<SendBuf<S::Data>>,
-        send_timeout: Duration,
+        send_timeout: Option<Duration>,
     ) -> PipeToSendStream<S> {
         PipeToSendStream {
             body_tx: tx,
             pending_data: None,
-            reset_timer: tokio::time::sleep(send_timeout),
+            reset_timer: send_timeout.map(tokio::time::sleep),
             stream,
         }
     }
@@ -135,8 +134,10 @@ where
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let mut me = self.project();
         loop {
-            if me.reset_timer.as_mut().poll(cx).is_ready() {
-                return Poll::Ready(Err(me.body_tx.on_send_timeout()));
+            if let Some(reset_timer) = me.reset_timer.as_mut().as_pin_mut() {
+                if reset_timer.poll(cx).is_ready() {
+                    return Poll::Ready(Err(me.body_tx.on_send_timeout()));
+                }
             }
 
             // we don't have the next chunk of data yet, so just reserve 1 byte to make
@@ -146,8 +147,10 @@ where
 
             if me.body_tx.capacity() == 0 {
                 loop {
-                    if me.reset_timer.as_mut().poll(cx).is_ready() {
-                        return Poll::Ready(Err(me.body_tx.on_send_timeout()));
+                    if let Some(reset_timer) = me.reset_timer.as_mut().as_pin_mut() {
+                        if reset_timer.poll(cx).is_ready() {
+                            return Poll::Ready(Err(me.body_tx.on_send_timeout()));
+                        }
                     }
 
                     match ready!(me.body_tx.poll_capacity(cx)) {

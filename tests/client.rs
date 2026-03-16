@@ -2598,7 +2598,7 @@ mod conn {
     }
 
     async fn send_h2_request_with_body_timeout(
-        timeout: Duration,
+        timeout: Option<Duration>,
     ) -> Result<Response<hyper::body::Incoming>, hyper::Error> {
         use hyper::service::service_fn;
 
@@ -2633,7 +2633,9 @@ mod conn {
         let mut req = Request::post("/timeout")
             .body(StreamBody::new(recv))
             .unwrap();
-        req.extensions_mut().insert(H2BodySendTimeout::new(timeout));
+        if let Some(timeout) = timeout {
+            req.extensions_mut().insert(H2BodySendTimeout::new(timeout));
+        }
 
         tokio::time::timeout(Duration::from_secs(2), client.send_request(req))
             .await
@@ -2643,14 +2645,14 @@ mod conn {
     #[tokio::test]
     async fn http2_request_body_send_timeout_is_configurable_per_request() {
         let started = tokio::time::Instant::now();
-        let _err = send_h2_request_with_body_timeout(Duration::from_millis(100))
+        let _err = send_h2_request_with_body_timeout(Some(Duration::from_millis(100)))
             .await
             .expect_err("short timeout should fail before the server responds");
         assert!(started.elapsed() < Duration::from_millis(400));
 
-        let resp = send_h2_request_with_body_timeout(Duration::from_secs(1))
+        let resp = send_h2_request_with_body_timeout(None)
             .await
-            .expect("longer timeout should allow the response to arrive");
+            .expect("no timeout should allow the response to arrive");
         assert_eq!(resp.status(), StatusCode::OK);
     }
 
