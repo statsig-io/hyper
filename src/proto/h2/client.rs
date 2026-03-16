@@ -24,7 +24,7 @@ use crate::client::dispatch::{Callback, SendWhen, TrySendError};
 use crate::common::either::Either;
 use crate::common::io::Compat;
 use crate::common::time::Time;
-use crate::ext::Protocol;
+use crate::ext::{H2BodySendTimeout, Protocol};
 use crate::headers;
 use crate::proto::h2::UpgradedSendStream;
 use crate::proto::Dispatched;
@@ -406,6 +406,7 @@ where
 {
     is_connect: bool,
     eos: bool,
+    send_timeout: Duration,
     fut: ResponseFuture,
     body_tx: SendStream<SendBuf<B::Data>>,
     body: B,
@@ -500,7 +501,7 @@ where
                 let ping = ping.clone();
 
                 let pipe = PipeMap {
-                    pipe: PipeToSendStream::new(f.body, f.body_tx),
+                    pipe: PipeToSendStream::new(f.body, f.body_tx, f.send_timeout),
                     conn_drop_ref: Some(conn_drop_ref),
                     ping: Some(ping),
                 };
@@ -656,6 +657,10 @@ where
 
                     let is_connect = req.method() == Method::CONNECT;
                     let eos = body.is_end_stream();
+                    let send_timeout = req
+                        .extensions()
+                        .get::<H2BodySendTimeout>()
+                        .map_or(super::DEFAULT_H2_STREAM_SEND_TIMEOUT, H2BodySendTimeout::get);
 
                     if is_connect
                         && headers::content_length_parse_all(req.headers())
@@ -688,6 +693,7 @@ where
                     let f = FutCtx {
                         is_connect,
                         eos,
+                        send_timeout,
                         fut,
                         body_tx,
                         body,

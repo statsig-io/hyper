@@ -1503,6 +1503,7 @@ mod conn {
 
     use hyper::body::{Body, Frame};
     use hyper::client::conn;
+    use hyper::ext::H2BodySendTimeout;
     use hyper::upgrade::OnUpgrade;
     use hyper::{Method, Request, Response, StatusCode};
 
@@ -2594,6 +2595,63 @@ mod conn {
             .unwrap();
 
         assert_eq!(&body, "No bread for you!");
+    }
+
+    async fn send_h2_request_with_body_timeout(
+        timeout: Duration,
+    ) -> Result<Response<hyper::body::Incoming>, hyper::Error> {
+        use hyper::service::service_fn;
+
+        let (listener, addr) = setup_tk_test_server().await;
+
+        tokio::spawn(async move {
+            let sock = TokioIo::new(listener.accept().await.unwrap().0);
+            let _ = hyper::server::conn::http2::Builder::new(TokioExecutor)
+                .timer(TokioTimer)
+                .serve_connection(
+                    sock,
+                    service_fn(|_req| async move {
+                        TokioTimer.sleep(Duration::from_millis(500)).await;
+                        Ok::<_, hyper::Error>(Response::new(Empty::<Bytes>::new()))
+                    }),
+                )
+                .await;
+        });
+
+        let io = tcp_connect(&addr).await.expect("tcp connect");
+        let (mut client, conn) = conn::http2::Builder::new(TokioExecutor)
+            .timer(TokioTimer)
+            .handshake(io)
+            .await
+            .expect("http handshake");
+
+        tokio::spawn(async move {
+            let _ = conn.await;
+        });
+
+        let (_tx, recv) = mpsc::channel::<Result<Frame<Bytes>, Box<dyn Error + Send + Sync>>>(0);
+        let mut req = Request::post("/timeout")
+            .body(StreamBody::new(recv))
+            .unwrap();
+        req.extensions_mut().insert(H2BodySendTimeout::new(timeout));
+
+        tokio::time::timeout(Duration::from_secs(2), client.send_request(req))
+            .await
+            .expect("request future should complete")
+    }
+
+    #[tokio::test]
+    async fn http2_request_body_send_timeout_is_configurable_per_request() {
+        let started = tokio::time::Instant::now();
+        let _err = send_h2_request_with_body_timeout(Duration::from_millis(100))
+            .await
+            .expect_err("short timeout should fail before the server responds");
+        assert!(started.elapsed() < Duration::from_millis(400));
+
+        let resp = send_h2_request_with_body_timeout(Duration::from_secs(1))
+            .await
+            .expect("longer timeout should allow the response to arrive");
+        assert_eq!(resp.status(), StatusCode::OK);
     }
 
     #[tokio::test]

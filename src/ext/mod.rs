@@ -30,6 +30,7 @@
 //! - **Informational Responses**: [`on_informational`] — Register callbacks for 1xx HTTP/1 responses on the client.
 //! - **Header Case Tracking**: Internal types for tracking the original casing and order of headers as received.
 //! - **HTTP/2 Protocol Extensions**: [`Protocol`] — Access the `:protocol` pseudo-header for Extended CONNECT in HTTP/2.
+//! - **HTTP/2 Client Request Extensions**: [`H2BodySendTimeout`] — Override the request body send timeout for a specific HTTP/2 client request.
 //!
 //! Some extensions are only available for specific protocols (HTTP/1 or HTTP/2) or use cases (client, server, FFI).
 //!
@@ -48,6 +49,8 @@ use http::header::{HeaderMap, IntoHeaderName, ValueIter};
 use std::collections::HashMap;
 #[cfg(feature = "http2")]
 use std::fmt;
+#[cfg(all(feature = "client", feature = "http2"))]
+use std::time::Duration;
 
 #[cfg(any(feature = "http1", feature = "ffi"))]
 mod h1_reason_phrase;
@@ -132,6 +135,38 @@ impl AsRef<[u8]> for Protocol {
 impl fmt::Debug for Protocol {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.inner.fmt(f)
+    }
+}
+
+#[cfg(all(feature = "client", feature = "http2"))]
+/// Extension type that overrides the HTTP/2 request body send timeout for a single request.
+///
+/// Hyper applies this timeout while sending an HTTP/2 request body. If the timeout is reached
+/// before the body is fully sent, Hyper resets the stream with `RST_STREAM(CANCEL)`.
+///
+/// Attach this extension to a request before sending it with an HTTP/2 client connection:
+///
+/// ```rust
+/// use std::time::Duration;
+/// use hyper::ext::H2BodySendTimeout;
+///
+/// let mut req = http::Request::new(());
+/// req.extensions_mut()
+///     .insert(H2BodySendTimeout::new(Duration::from_secs(30)));
+/// ```
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct H2BodySendTimeout(Duration);
+
+#[cfg(all(feature = "client", feature = "http2"))]
+impl H2BodySendTimeout {
+    /// Creates a new per-request HTTP/2 body send timeout override.
+    pub fn new(timeout: Duration) -> Self {
+        Self(timeout)
+    }
+
+    /// Returns the configured timeout duration.
+    pub fn get(&self) -> Duration {
+        self.0
     }
 }
 

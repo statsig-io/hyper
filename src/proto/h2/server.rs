@@ -509,7 +509,11 @@ where
 
                         let body_tx = reply!(me, res, false);
                         H2StreamState::Body {
-                            pipe: PipeToSendStream::new(body, body_tx),
+                            pipe: PipeToSendStream::new(
+                                body,
+                                body_tx,
+                                super::DEFAULT_H2_STREAM_SEND_TIMEOUT,
+                            ),
                         }
                     } else {
                         reply!(me, res, true);

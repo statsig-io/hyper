@@ -20,7 +20,7 @@ use crate::rt::{Read, ReadBufCursor, Write};
 
 pub(crate) mod ping;
 
-const H2_STREAM_SEND_TIMEOUT: Duration = Duration::from_secs(10);
+const DEFAULT_H2_STREAM_SEND_TIMEOUT: Duration = Duration::from_secs(10);
 const H2_STREAM_SEND_CHUNK_SIZE: usize = 16 * 1024;
 
 cfg_client! {
@@ -111,11 +111,15 @@ impl<S> PipeToSendStream<S>
 where
     S: Body,
 {
-    fn new(stream: S, tx: SendStream<SendBuf<S::Data>>) -> PipeToSendStream<S> {
+    fn new(
+        stream: S,
+        tx: SendStream<SendBuf<S::Data>>,
+        send_timeout: Duration,
+    ) -> PipeToSendStream<S> {
         PipeToSendStream {
             body_tx: tx,
             pending_data: None,
-            reset_timer: tokio::time::sleep(H2_STREAM_SEND_TIMEOUT),
+            reset_timer: tokio::time::sleep(send_timeout),
             stream,
         }
     }
