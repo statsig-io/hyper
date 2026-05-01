@@ -14,10 +14,10 @@ jobs:
           - end_to_end
           - pipeline
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@nightly
+        uses: dtolnay/rust-toolchain@5b842231ba77f5c045dba54ac5560fed2db780e2 # nightly
 
       # Run benchmark and stores the output to a file
       - name: Run benchmark
@@ -25,14 +25,14 @@ jobs:
 
       # Download previous benchmark result from cache (if exists)
       - name: Download previous benchmark data
-        uses: actions/cache@v3
+        uses: actions/cache@6f8efc29b200d32929f49075959781ed54ec270c # v3
         with:
           path: ./cache
           key: ${{ runner.os }}-benchmark
 
       # Run `github-action-benchmark` action
       - name: Store benchmark result
-        uses: seanmonstar/github-action-benchmark@v1-patch-1
+        uses: seanmonstar/github-action-benchmark@a20887d1e21bc9d781e6883a97a491ab6c840efe # v1-patch-1
         with:
           name: ${{ matrix.bench }}
           # What benchmark tool the output.txt came from
