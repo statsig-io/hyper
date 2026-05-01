@@ -1,6 +1,6 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1771331157986,
-  "repoUrl": "https://github.com/hyperium/hyper",
+  "lastUpdate": 1777663118604,
+  "repoUrl": "https://github.com/statsig-io/hyper",
   "entries": {
     "pipeline": [
       {
@@ -11069,6 +11069,36 @@ window.BENCHMARK_DATA = {
             "name": "hello_world_16",
             "value": 51920,
             "range": "± 13733.09",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "hintz@openai.com",
+            "name": "Drew Hintz",
+            "username": "hintz-openai"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "edb49dce826cb605181617dffffbd2c89ac05419",
+          "message": "Pin GitHub Actions workflow references (#1)",
+          "timestamp": "2026-05-01T14:17:51-05:00",
+          "tree_id": "2068500e73bc2911224a7949aa22f12364319d8f",
+          "url": "https://github.com/statsig-io/hyper/commit/edb49dce826cb605181617dffffbd2c89ac05419"
+        },
+        "date": 1777663115146,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "hello_world_16",
+            "value": 47459,
+            "range": "± 6284.53",
             "unit": "ns/iter"
           }
         ]
