@@ -14,7 +14,7 @@ permissions:
 jobs:
   ci-pass:
     name: CI is green
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     needs:
       - style
       - test
@@ -34,7 +34,7 @@ jobs:
 
   style:
     name: Check Style
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -75,7 +75,7 @@ jobs:
             features: "--features full,nightly"
             benches: true
 
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ fromJSON('{"ubuntu-latest":"blacksmith-2vcpu-ubuntu-2404","windows-latest":"blacksmith-2vcpu-windows-2025","macOS-latest":"blacksmith-6vcpu-macos-latest"}')[matrix.os] }}
 
     steps:
       - name: Checkout
@@ -99,7 +99,7 @@ jobs:
     name: Check MSRV
     needs: [style]
 
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
 
     steps:
       - name: Checkout
@@ -129,7 +129,7 @@ jobs:
   miri:
     name: Test with Miri
     needs: [style]
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
 
     steps:
       - name: Checkout
@@ -149,7 +149,7 @@ jobs:
   features:
     name: features
     needs: [style]
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -175,7 +175,7 @@ jobs:
   ffi:
     name: Test C API (FFI)
     needs: [style]
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -200,7 +200,7 @@ jobs:
 
   ffi-header:
     name: Verify hyper.h is up to date
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -231,7 +231,7 @@ jobs:
   ffi-cargo-c:
     name: Test cargo-c support (FFI)
     needs: [style]
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -256,7 +256,7 @@ jobs:
   doc:
     name: Build docs
     needs: [style, test]
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -272,7 +272,7 @@ jobs:
   check-external-types:
     name: Check exposed types
     needs: [style, test]
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -294,7 +294,7 @@ jobs:
 
   udeps:
     needs: [style]
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -314,7 +314,7 @@ jobs:
         run: cargo udeps --features full
 
   minimal-versions:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     needs: [style]
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -328,7 +328,7 @@ jobs:
 
   semver:
     name: semver
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
       - name: Check semver
